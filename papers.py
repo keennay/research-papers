@@ -468,6 +468,10 @@ def resolve_source(source: str, temp_dir: Path) -> SourceResolution:
     if host.endswith("science.org") or host.endswith(".science.org"):
         return resolve_science(source)
 
+    github_resolution = resolve_github_pdf(source)
+    if github_resolution is not None:
+        return github_resolution
+
     if path.lower().endswith(".pdf"):
         return SourceResolution(source=source, source_url=source, pdf_url=source)
 
@@ -490,6 +494,40 @@ def resolve_source(source: str, temp_dir: Path) -> SourceResolution:
 
     raise PaperError(
         "Could not find a PDF for this page. Provide a direct PDF URL or a local PDF path."
+    )
+
+
+def resolve_github_pdf(url: str) -> SourceResolution | None:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower()
+    if host not in {"github.com", "www.github.com"}:
+        return None
+
+    path = urllib.parse.unquote(parsed.path).strip("/")
+    parts = [part for part in path.split("/") if part]
+    if len(parts) < 5 or parts[2] != "blob":
+        return None
+
+    owner, repo = parts[0], parts[1]
+    file_parts = parts[3:]
+    if not file_parts[-1].lower().endswith(".pdf"):
+        return None
+
+    raw_path = "/".join(urllib.parse.quote(part, safe="") for part in (owner, repo, *file_parts))
+    pdf_url = f"https://raw.githubusercontent.com/{raw_path}"
+    metadata = PaperMetadata(
+        provider="github",
+        provider_id=f"{owner}/{repo}",
+        source_url=url,
+        pdf_url=pdf_url,
+    )
+    return SourceResolution(
+        source=url,
+        provider="github",
+        provider_id=metadata.provider_id,
+        source_url=url,
+        pdf_url=pdf_url,
+        web_metadata=metadata,
     )
 
 
